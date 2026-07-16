@@ -1,6 +1,6 @@
 {
     "name": "ciaihospital-erp",
-    "url": "https://ciaihospital-erp-test-d6ba574e5b-1443958870.tcloudbaseapp.com",
+    "url": "https://ciaihospital-erp-test-d6ba574e5b-1443958870.tcloudbaseapp.com/?biz=rehab",
     "showName": "儿童康复中心",
     "appid": "",
     "icon": "",
@@ -177,7 +177,7 @@
         "name": "ciaihospital-erp",
         "showName": "儿童康复中心",
         "version": "1.0.0",
-        "webUrl": "https://ciaihospital-erp-test-d6ba574e5b-1443958870.tcloudbaseapp.com",
+        "webUrl": "https://ciaihospital-erp-test-d6ba574e5b-1443958870.tcloudbaseapp.com/?biz=rehab",
         "id": "com.ciai.hospitalerp",
         "icon": "./app-icon.png",
         "input": "./app-icon.png",
