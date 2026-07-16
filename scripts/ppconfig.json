@@ -82,7 +82,7 @@
     },
     "phone": {
         "fullScreen": false,
-        "launchImage": "",
+        "launchImage": "launch.jpg",
         "screenOn": false,
         "download": true,
         "internet": true,
