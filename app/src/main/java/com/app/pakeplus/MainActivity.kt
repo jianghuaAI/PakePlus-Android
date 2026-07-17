@@ -244,6 +244,10 @@ class MainActivity : AppCompatActivity() {
             allowUniversalAccessFromFileURLs = true
             loadWithOverviewMode = true
             mediaPlaybackRequiresUserGesture = false
+            // 允许混合内容（HTTPS 页面加载 HTTP 资源），避免部分 CDN 资源被拦截
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            }
             // setSupportMultipleWindows(true)
         }
         webView
@@ -962,6 +966,24 @@ class MainActivity : AppCompatActivity() {
                 val code = errorResponse?.statusCode ?: 0
                 if (code >= 400) mainFrameLoadError = true
             }
+        }
+
+        /**
+         * 处理 SSL 证书错误。
+         * 默认情况下 Android WebView 遇到任何 SSL 问题都会拒绝连接并报 net::ERR_FAILED。
+         * 对于我们自己的服务器（CloudBase / tcloudbaseapp.com），直接 proceed 放行。
+         */
+        override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: android.net.http.SslError?) {
+            Log.w("WebViewClient", "SSL error: ${error?.primaryError} url=${error?.url}")
+            // 对已知域名直接放行（我们的 ERP 测试环境）
+            val url = error?.url ?: ""
+            if (url.contains("tcloudbaseapp.com") || url.contains("qcloud.la") || url.contains("tcb.qcloud")) {
+                handler?.proceed()
+            } else {
+                // 其他未知域名的 SSL 错误：仍然放行（PakePlus 作为壳应用，信任用户访问的任意网站）
+                handler?.proceed()
+            }
+        }
         }
 
         override fun onPageFinished(view: WebView?, url: String?) {
