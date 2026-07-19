@@ -986,7 +986,6 @@ class MainActivity : AppCompatActivity() {
                 handler?.proceed()
             }
         }
-        }
 
         override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
