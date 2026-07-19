@@ -9,7 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
-import android.net.http.SslErrorHandler
+import android.webkit.SslErrorHandler
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
