@@ -69,14 +69,14 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var gestureDetector: GestureDetectorCompat
-    private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
-    private lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
-    private lateinit var permissionLauncher: ActivityResultLauncher<Array<String>>
-    private var pendingPermissionRequest: PermissionRequest? = null
+    internal var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+    internal lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
+    internal lateinit var permissionLauncher: ActivityResultLauncher<Array<String>>
+    internal var pendingPermissionRequest: PermissionRequest? = null
 
-    private lateinit var locationPermissionLauncher: ActivityResultLauncher<Array<String>>
-    private var pendingGeolocationOrigin: String? = null
-    private var pendingGeolocationCallback: GeolocationPermissions.Callback? = null
+    internal lateinit var locationPermissionLauncher: ActivityResultLauncher<Array<String>>
+    internal var pendingGeolocationOrigin: String? = null
+    internal var pendingGeolocationCallback: GeolocationPermissions.Callback? = null
 
     // 全屏视频相关
     private var customView: View? = null
@@ -405,7 +405,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // 显示全屏视频
-    private fun showCustomView(view: View, callback: WebChromeClient.CustomViewCallback) {
+    internal fun showCustomView(view: View, callback: WebChromeClient.CustomViewCallback) {
         // 如果已经有全屏视图，先隐藏它
         if (customView != null) {
             hideCustomView()
@@ -447,7 +447,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // 隐藏全屏视频
-    private fun hideCustomView() {
+    internal fun hideCustomView() {
         if (customView == null) return
 
         // 恢复系统UI
