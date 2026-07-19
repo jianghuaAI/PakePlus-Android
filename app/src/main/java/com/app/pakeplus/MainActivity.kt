@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
+import android.net.http.SslErrorHandler
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -29,6 +30,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.GeolocationPermissions
 import android.webkit.WebView
+import android.webkit.WebSettings
 import android.webkit.WebViewClient
 import android.webkit.MimeTypeMap
 import android.widget.FrameLayout
