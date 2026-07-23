@@ -52,6 +52,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import androidx.core.content.FileProvider
+import android.provider.MediaStore
 import androidx.core.view.GestureDetectorCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -59,6 +61,7 @@ import org.json.JSONObject
 import java.net.URISyntaxException
 import java.net.URLDecoder
 import android.util.Base64
+import java.io.File
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
@@ -72,6 +75,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var gestureDetector: GestureDetectorCompat
     internal var fileUploadCallback: ValueCallback<Array<Uri>>? = null
+    internal var pendingCameraUri: Uri? = null
     internal lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
     internal lateinit var permissionLauncher: ActivityResultLauncher<Array<String>>
     internal var pendingPermissionRequest: PermissionRequest? = null
@@ -115,18 +119,25 @@ class MainActivity : AppCompatActivity() {
 
             var results: Array<Uri>? = null
 
-            if (resultCode == RESULT_OK && data != null) {
-                val dataString = data.dataString
-                val clipData = data.clipData
+            if (resultCode == RESULT_OK) {
+                // 相机拍照模式：图片已写入 pendingCameraUri，返回的 data 为 null
+                val cameraUri = pendingCameraUri
+                if (cameraUri != null) {
+                    results = arrayOf(cameraUri)
+                    pendingCameraUri = null
+                } else if (data != null) {
+                    val dataString = data.dataString
+                    val clipData = data.clipData
 
-                if (clipData != null) {
-                    // 多文件选择
-                    results = Array(clipData.itemCount) { i ->
-                        clipData.getItemAt(i).uri
+                    if (clipData != null) {
+                        // 多文件选择
+                        results = Array(clipData.itemCount) { i ->
+                            clipData.getItemAt(i).uri
+                        }
+                    } else if (dataString != null) {
+                        // 单文件选择
+                        results = arrayOf(Uri.parse(dataString))
                     }
-                } else if (dataString != null) {
-                    // 单文件选择
-                    results = arrayOf(Uri.parse(dataString))
                 }
             }
 
@@ -1085,6 +1096,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // 用 FileProvider 生成相机拍照输出 URI（规避 FileUriExposedException，Android 7+ 必需）
+    private fun createImageOutputUri(): Uri? {
+        return try {
+            val dir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "camera")
+            if (!dir.exists()) dir.mkdirs()
+            val file = File(dir, "pp_${System.currentTimeMillis()}.jpg")
+            val authority = "$packageName.fileprovider"
+            FileProvider.getUriForFile(this, authority, file)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "createImageOutputUri failed", e)
+            null
+        }
+    }
+
     inner class MyChromeClient(private val activity: MainActivity) : WebChromeClient() {
         override fun onProgressChanged(view: WebView?, newProgress: Int) {
             super.onProgressChanged(view, newProgress)
@@ -1203,11 +1228,38 @@ class MainActivity : AppCompatActivity() {
             activity.fileUploadCallback = filePathCallback
 
             try {
+                val acceptTypes = fileChooserParams?.acceptTypes
+
+                // 检测 capture 拍照：WebView 对 <input capture> 会置 isCaptureEnabled=true
+                val isImageCapture = fileChooserParams?.isCaptureEnabled == true &&
+                        acceptTypes?.any { it.startsWith("image/", ignoreCase = true) } == true
+
+                if (isImageCapture) {
+                    // 走系统相机：用 FileProvider 提供输出 URI
+                    val photoUri = createImageOutputUri()
+                    if (photoUri == null) {
+                        activity.fileUploadCallback?.onReceiveValue(null)
+                        activity.fileUploadCallback = null
+                        return false
+                    }
+                    pendingCameraUri = photoUri
+                    val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                        putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
+                    }
+                    if (captureIntent.resolveActivity(packageManager) == null) {
+                        // 设备无相机应用，回退到普通选择器
+                        pendingCameraUri = null
+                    } else {
+                        activity.fileChooserLauncher.launch(captureIntent)
+                        return true
+                    }
+                }
+
+                // 非拍照场景：走原选择器（单选 / 多选）
                 val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
 
                     // 根据参数设置文件类型
-                    val acceptTypes = fileChooserParams?.acceptTypes
                     if (acceptTypes != null && acceptTypes.isNotEmpty()) {
                         // 支持多种 MIME 类型
                         if (acceptTypes.size == 1) {
