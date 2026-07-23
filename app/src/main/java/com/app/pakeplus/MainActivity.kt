@@ -73,6 +73,10 @@ import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
 
+    companion object {
+        private const val TAG = "PakePlus"
+    }
+
 //    private lateinit var appBarConfiguration: AppBarConfiguration
 //    private lateinit var binding: ActivityMainBinding
 
@@ -1152,7 +1156,7 @@ class MainActivity : AppCompatActivity() {
 
                 // 构建修正后的响应头：删除 content-disposition，强制内联
                 val headers = mutableMapOf<String, String>("Content-Type" to contentType)
-                for ((key) in conn.headerFields) {
+                for ((key, _value) in conn.headerFields) {
                     key?.let {
                         if (it.equals("content-disposition", ignoreCase = true)) {
                             // 剥离 attachment → 不加入响应头
