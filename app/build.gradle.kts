@@ -68,4 +68,11 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+
+    // CameraX：App 内自绘相机（上课打卡拍照，规避 OEM 系统相机 App 闪退）
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    // 拍照 JPEG 的 EXIF 旋转校正
+    implementation(libs.androidx.exifinterface)
 }

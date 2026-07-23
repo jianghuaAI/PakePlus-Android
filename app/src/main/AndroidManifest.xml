@@ -83,6 +83,14 @@
             </intent-filter>
         </activity>
 
+        <!-- App 内自绘相机（上课打卡拍照，CameraX，规避 OEM 系统相机闪退） -->
+        <activity
+            android:name=".CameraActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PakePlus.NoActionBar"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize" />
+
         <!-- 相机拍照输出 URI 的 FileProvider（与 MainActivity.createImageOutputUri 的 authority 对应） -->
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -92,6 +92,10 @@ class MainActivity : AppCompatActivity() {
     internal var pendingGeolocationOrigin: String? = null
     internal var pendingGeolocationCallback: GeolocationPermissions.Callback? = null
 
+    // App 内自绘相机（上课打卡拍照，CameraX）
+    private lateinit var cameraPermissionLauncher: ActivityResultLauncher<Array<String>>
+    private lateinit var cameraResultLauncher: ActivityResultLauncher<Intent>
+
     // 全屏视频相关
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
@@ -191,6 +195,29 @@ class MainActivity : AppCompatActivity() {
                 val coarse = results[Manifest.permission.ACCESS_COARSE_LOCATION] == true
                 geoCallback.invoke(origin, fine || coarse, false)
             }
+        }
+
+        // App 内自绘相机：CAMERA 权限 + 拍照结果回传 WebView
+        cameraPermissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { results ->
+            val granted = results[Manifest.permission.CAMERA] == true
+            if (granted) {
+                cameraResultLauncher.launch(Intent(this, CameraActivity::class.java))
+            } else {
+                webView.evaluateJavascript("window.__onNativeCameraResult(null);") {}
+            }
+        }
+        cameraResultLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            val data = if (result.resultCode == RESULT_OK) result.data?.getStringExtra("data") else null
+            val js = if (data != null) {
+                "window.__onNativeCameraResult(${JSONObject.quote(data)});"
+            } else {
+                "window.__onNativeCameraResult(null);"
+            }
+            webView.evaluateJavascript(js) {}
         }
 
         // parseJsonWithNative
@@ -644,6 +671,23 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun isApp(): Boolean {
             return true
+        }
+
+        // App 内自绘相机：前端上课打卡"拍照"按钮调用，直开取景器（不调系统相机 App，规避 OEM 闪退）
+        @JavascriptInterface
+        fun openCamera() {
+            (context as? MainActivity)?.runOnUiThread {
+                requestCameraAndLaunch()
+            }
+        }
+    }
+
+    /** 上课打卡：App 内"拍照" → 已授权则直接启动自绘相机，否则先申请 CAMERA 权限 */
+    internal fun requestCameraAndLaunch() {
+        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            cameraResultLauncher.launch(Intent(this, CameraActivity::class.java))
+        } else {
+            cameraPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
         }
     }
 
