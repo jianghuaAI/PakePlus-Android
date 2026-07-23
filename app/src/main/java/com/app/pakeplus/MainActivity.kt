@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.webkit.SslErrorHandler
+import android.os.Handler
+import android.os.Looper
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -96,6 +98,12 @@ class MainActivity : AppCompatActivity() {
 
     /** app.json 中 launch 非空时才显示启动图遮罩 */
     private var showLaunchSplash: Boolean = false
+
+    /** splash 超时强制隐藏：防止 WebView 加载卡死导致启动图永远不消失 */
+    private val splashTimeoutHandler = Handler(Looper.getMainLooper())
+    private var splashTimeoutRunnable: Runnable? = null
+    /** splash 超时时间：8 秒后无论 WebView 是否加载完成都强制隐藏 */
+    private val SPLASH_TIMEOUT_MS = 8000L
 
     /** app.json 中 screenOn 为 true */
     private var keepScreenOnFromConfig: Boolean = false
@@ -340,6 +348,17 @@ class MainActivity : AppCompatActivity() {
 
         // load webUrl or file:///android_asset/index.html
         webView.loadUrl(webUrl)
+
+        // 启动 splash 超时保护：8 秒后无论 WebView 是否加载完成都强制隐藏
+        if (showLaunchSplash) {
+            splashTimeoutRunnable = Runnable {
+                if (showLaunchSplash) {
+                    Log.w("Splash", "Splash timeout (${SPLASH_TIMEOUT_MS}ms) — force hiding overlay")
+                    hideSplashOverlay()
+                }
+            }
+            splashTimeoutHandler.postDelayed(splashTimeoutRunnable, SPLASH_TIMEOUT_MS)
+        }
 
 //        binding = ActivityMainBinding.inflate(layoutInflater)
 //        setContentView(R.layout.single_main)
@@ -831,6 +850,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun hideSplashOverlay() {
         if (!showLaunchSplash) return
+        // 取消待执行的超时任务（避免重复隐藏）
+        splashTimeoutRunnable?.let { splashTimeoutHandler.removeCallbacks(it) }
         val overlay = findViewById<View>(R.id.splash_overlay)
         if (overlay.visibility != View.VISIBLE) return
         overlay.animate()
