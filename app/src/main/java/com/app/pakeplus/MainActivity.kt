@@ -62,7 +62,6 @@ import java.net.URISyntaxException
 import java.net.URLDecoder
 import android.util.Base64
 import java.io.File
-import java.io.File
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import kotlin.math.abs
