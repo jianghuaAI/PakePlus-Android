@@ -84,7 +84,7 @@
     "fullScreen": false,
     "launchImage": "launch.jpg",
     "screenOn": false,
-    "download": true,
+    "download": false,
     "internet": true,
     "position": false,
     "direction": "vertical",
