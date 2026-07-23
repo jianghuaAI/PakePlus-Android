@@ -1244,6 +1244,9 @@ class MainActivity : AppCompatActivity() {
                     pendingCameraUri = photoUri
                     val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
                         putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
+                        // FileProvider 跨进程共享 URI 必须显式 grant 权限，
+                        // 否则相机 App 收到 URI 但无法写入，Android 7+ 会抛 SecurityException / 部分设备闪退
+                        addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     if (captureIntent.resolveActivity(packageManager) == null) {
                         // 设备无相机应用，回退到普通选择器

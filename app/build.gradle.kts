@@ -28,15 +28,12 @@ android {
     buildTypes {
         debug {
             isDebuggable = true
-            isMinifyEnabled = true
+            // 关闭 R8：保留源码类名/方法名，便于 logcat 定位；同时避免混淆删 FileProvider 等
+            isMinifyEnabled = false
             // 关闭资源压缩：R8 会把 res/xml/provider_paths.xml 误判为无引用而删除，
             // 导致拍照时 FileProvider.getUriForFile 抛 IllegalArgumentException 闪退。
             isShrinkResources = false
             signingConfig = signingConfigs.getByName("release")
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
         }
         release {
             isMinifyEnabled = true
