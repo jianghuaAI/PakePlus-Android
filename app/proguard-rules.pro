@@ -19,3 +19,9 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# 修复拍照闪退：保留 FileProvider 与 MainActivity 内部类（相机回调通过反射/内部类调用）
+-keep class androidx.core.content.FileProvider { *; }
+-keep class com.app.pakeplus.MainActivity { *; }
+-keep class com.app.pakeplus.MainActivity$* { *; }
+-keep class com.app.pakeplus.MainActivity$MyChromeClient { *; }
