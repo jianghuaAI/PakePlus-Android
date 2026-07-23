@@ -11,7 +11,7 @@
   "injectJq": true,
   "tauriApi": false,
   "devbug": false,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "preview": "desktop",
   "platform": [
     "1-1",
@@ -176,7 +176,7 @@
   "android": {
     "name": "ciaihospital-erp",
     "showName": "儿童康复中心",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "webUrl": "https://ciaihospital-erp-test-d6ba574e5b-1443958870.tcloudbaseapp.com/?biz=rehab",
     "id": "com.ciai.hospitalerp",
     "icon": "./app-icon.png",
