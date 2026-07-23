@@ -379,7 +379,7 @@ class MainActivity : AppCompatActivity() {
                     hideSplashOverlay()
                 }
             }
-            splashTimeoutHandler.postDelayed(splashTimeoutRunnable, SPLASH_TIMEOUT_MS)
+            splashTimeoutHandler.postDelayed(splashTimeoutRunnable!!, SPLASH_TIMEOUT_MS)
         }
 
 //        binding = ActivityMainBinding.inflate(layoutInflater)
