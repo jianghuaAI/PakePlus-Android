@@ -62,6 +62,9 @@ import androidx.core.view.WindowInsetsCompat
 import org.json.JSONObject
 import java.net.URISyntaxException
 import java.net.URLDecoder
+import java.net.URL
+import java.net.HttpURLConnection
+import android.annotation.TargetApi
 import android.util.Base64
 import java.io.File
 import java.io.FileOutputStream
@@ -297,6 +300,21 @@ class MainActivity : AppCompatActivity() {
         // blob:/data: 不能交给 DownloadManager，否则会抛异常甚至闪退（Canvas 导出常见）
         webView.setDownloadListener { url, userAgent, contentDisposition, mimetype, contentLength ->
             if (tryHandleSpecialSchemeDownload(url, userAgent, contentDisposition, mimetype)) {
+                return@setDownloadListener
+            }
+            // 防御：CloudBase 静态托管对所有文件返回 content-disposition: attachment，
+            // 导致 WebView 对可内联资源（HTML/JS/CSS/SVG/JSON 等）也触发下载。
+            // 此处过滤掉应内联渲染的 MIME 类型，避免"已开始下载"Toast + 启动页卡死。
+            val mime = mimetype?.lowercase()?.trim() ?: ""
+            val inlineTypes = setOf(
+                "text/html", "text/plain", "text/css",
+                "application/javascript", "application/x-javascript", "text/javascript",
+                "application/json", "application/manifest+json",
+                "image/svg+xml", "image/png", "image/jpeg", "image/gif", "image/x-icon",
+                "application/xml", "text/xml"
+            )
+            if (mime in inlineTypes || mime.isEmpty()) {
+                Log.d(TAG, "[DLFilter] 忽略内联类型下载: $url (mime=$mimetype)")
                 return@setDownloadListener
             }
             startDownload(url, userAgent, contentDisposition, mimetype)
@@ -1099,6 +1117,58 @@ class MainActivity : AppCompatActivity() {
             """.trimIndent()
 
             view?.evaluateJavascript(blobInterceptor, null)
+        }
+
+        /**
+         * 核心修复：剥离 CloudBase 静态托管强制附加的 content-disposition: attachment 头。
+         * CloudBase 对所有文件（含 index.html / sw.js / manifest）返回 attachment，
+         * 导致 WebView 把主页当附件下载而不渲染 → 触发"已开始下载"Toast + 启动页卡死。
+         * 此方法在 WebView 处理响应前拦截，对可内联渲染的 MIME 类型返回修正后的 WebResourceResponse。
+         */
+        @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+        override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+            if (request == null || !request.isForMainFrame) {
+                // 子资源（JS/CSS/图片）不拦截，走默认逻辑（DownloadListener 已有过滤）
+                return super.shouldInterceptRequest(view, request)
+            }
+            try {
+                val url = request.url.toString()
+                val conn = URL(url).openConnection() as HttpURLConnection
+                conn.requestMethod = request.method
+                // 转发原始请求头（含 Cookie / User-Agent 等）
+                for ((key, value) in request.requestHeaders) {
+                    conn.setRequestProperty(key, value)
+                }
+                conn.connectTimeout = 15000
+                conn.readTimeout = 20000
+                conn.instanceFollowRedirects = true
+                conn.connect()
+
+                val contentType = conn.contentType ?: "application/octet-stream"
+                val mime = contentType.split(";").getOrNull(0)?.trim() ?: "application/octet-stream"
+                val encoding = conn.contentEncoding ?: "utf-8"
+                val statusCode = conn.responseCode
+                val msg = conn.responseMessage
+
+                // 构建修正后的响应头：删除 content-disposition，强制内联
+                val headers = mutableMapOf<String, String>("Content-Type" to contentType)
+                for ((key) in conn.headerFields) {
+                    key?.let {
+                        if (it.equals("content-disposition", ignoreCase = true)) {
+                            // 剥离 attachment → 不加入响应头
+                            Log.d(TAG, "[AntiAttachment] 剥离 $url 的 $it 头")
+                        } else {
+                            headers[it] = conn.getHeaderField(it) ?: ""
+                        }
+                    }
+                }
+
+                val inputStream = conn.inputStream
+                return WebResourceResponse(mime, encoding, statusCode, msg, headers, inputStream)
+            } catch (e: Exception) {
+                Log.w(TAG, "[AntiAttachment] 拦截失败，回退默认加载: ${request.url}", e)
+                return super.shouldInterceptRequest(view, request)
+            }
         }
 
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
