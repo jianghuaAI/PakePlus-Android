@@ -1226,38 +1226,17 @@ class MainActivity : AppCompatActivity() {
             }
             activity.fileUploadCallback = filePathCallback
 
+            // 加固（修复"点拍照即闪退"）：整个文件选择流程包在 try/catch(Exception) 内。
+            // 任何壳侧异常（intent 构建、FileProvider、相机 App 启动失败等）都兜底为
+            // "取消选择"，绝不让 WebView 进程崩溃。
             try {
                 val acceptTypes = fileChooserParams?.acceptTypes
 
-                // 检测 capture 拍照：WebView 对 <input capture> 会置 isCaptureEnabled=true
-                val isImageCapture = fileChooserParams?.isCaptureEnabled == true &&
-                        acceptTypes?.any { it.startsWith("image/", ignoreCase = true) } == true
-
-                if (isImageCapture) {
-                    // 走系统相机：用 FileProvider 提供输出 URI
-                    val photoUri = createImageOutputUri()
-                    if (photoUri == null) {
-                        activity.fileUploadCallback?.onReceiveValue(null)
-                        activity.fileUploadCallback = null
-                        return false
-                    }
-                    pendingCameraUri = photoUri
-                    val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-                        putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
-                        // FileProvider 跨进程共享 URI 必须显式 grant 权限，
-                        // 否则相机 App 收到 URI 但无法写入，Android 7+ 会抛 SecurityException / 部分设备闪退
-                        addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    if (captureIntent.resolveActivity(packageManager) == null) {
-                        // 设备无相机应用，回退到普通选择器
-                        pendingCameraUri = null
-                    } else {
-                        activity.fileChooserLauncher.launch(captureIntent)
-                        return true
-                    }
-                }
-
-                // 非拍照场景：走原选择器（单选 / 多选）
+                // 加固：不再为 <input capture> 直接发 ACTION_IMAGE_CAPTURE + FileProvider content:// URI。
+                // 部分 OEM 定制相机（华为 / 小米 / OPPO 等）对该 URI 兼容性差，相机 App 启动即崩溃
+                // 并带走调用方 WebView 进程 → 表现为"点拍照即闪退"。
+                // 改为统一走 ACTION_GET_CONTENT 标准选择器（多数设备内置"相机"入口），兼容最稳，
+                // 与系统浏览器行为一致。
                 val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
 
@@ -1276,18 +1255,23 @@ class MainActivity : AppCompatActivity() {
                         type = "*/*"
                     }
 
-                    // 支持多选
+                    // 支持多选（前端 <input multiple>）
                     if (fileChooserParams?.mode == FileChooserParams.MODE_OPEN_MULTIPLE) {
                         putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                     }
                 }
 
-                // 创建选择器，允许用户选择不同的应用来打开文件
-                val chooserIntent = Intent.createChooser(intent, "选择文件")
+                // 图片场景标题提示"拍照或选择图片"，其余为"选择文件"
+                val chooserTitle = if (acceptTypes?.any { it.startsWith("image/", ignoreCase = true) } == true) {
+                    "拍照或选择图片"
+                } else {
+                    "选择文件"
+                }
+                val chooserIntent = Intent.createChooser(intent, chooserTitle)
                 activity.fileChooserLauncher.launch(chooserIntent)
                 return true
-            } catch (e: ActivityNotFoundException) {
-                Log.e("WebChromeClient", "无法打开文件选择器", e)
+            } catch (e: Exception) {
+                Log.e("WebChromeClient", "打开文件选择器失败", e)
                 activity.fileUploadCallback?.onReceiveValue(null)
                 activity.fileUploadCallback = null
                 return false
