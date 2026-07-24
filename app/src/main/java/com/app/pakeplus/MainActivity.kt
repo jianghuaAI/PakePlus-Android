@@ -52,6 +52,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 // import androidx.drawerlayout.widget.DrawerLayout
 // import com.app.pakeplus.databinding.ActivityMainBinding
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.core.content.FileProvider
@@ -85,6 +86,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gestureDetector: GestureDetectorCompat
     internal var fileUploadCallback: ValueCallback<Array<Uri>>? = null
     internal var pendingCameraUri: Uri? = null
+    // 系统相机输出文件（用 EXTRA_OUTPUT 指定，拍完直接读该文件，不依赖 onActivityResult 的 data）
+    internal var pendingCameraFile: File? = null
     internal lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
     internal lateinit var permissionLauncher: ActivityResultLauncher<Array<String>>
     internal var pendingPermissionRequest: PermissionRequest? = null
@@ -198,44 +201,53 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // App 内自绘相机：CAMERA 权限 + 拍照结果回传 WebView
+        // 系统相机：动态申请 CAMERA 运行时权限（Android 6.0+/API23+ 必需）。
+        // 关键修复：清单声明了 CAMERA 权限却不在运行时申请，会导致 ACTION_IMAGE_CAPTURE 抛
+        // SecurityException（官方文档明确说明），表现为"点拍照无任何反应"。授予后再启动系统相机。
         cameraPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { results ->
             val granted = results[Manifest.permission.CAMERA] == true
             if (granted) {
-                cameraResultLauncher.launch(Intent(this, CameraActivity::class.java))
+                launchSystemCamera()
             } else {
-                webView?.evaluateJavascript("window.__onNativeCameraResult(null);") {}
+                // 处理用户拒绝 / 勾选"不再询问"两种情况
+                val permanentlyDenied = !ActivityCompat.shouldShowRequestPermissionRationale(
+                    this, Manifest.permission.CAMERA
+                )
+                val tip = if (permanentlyDenied) {
+                    "相机权限已被永久拒绝，请到 系统设置 > 应用 > 权限 中手动开启后重试"
+                } else {
+                    "未获得相机权限，无法拍照"
+                }
+                showTopToast(this, tip, Toast.LENGTH_LONG)
+                webView?.evaluateJavascript("window.__onNativeCameraError('camera_permission_denied');") {}
             }
         }
         cameraResultLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
+            // 无论成功失败，先取出并清空挂起引用，避免串场
+            val file = pendingCameraFile
+            val uri = pendingCameraUri
+            cleanupPendingCamera()
+
             if (result.resultCode == RESULT_OK) {
-                // 优先处理 ACTION_IMAGE_CAPTURE 回传：data 为 null，图片已写入 pendingCameraUri
-                val camUri = pendingCameraUri
-                if (camUri != null) {
-                    pendingCameraUri = null
-                    val base64 = readUriToBase64(camUri)
-                    if (base64 != null) {
-                        webView?.evaluateJavascript("window.__onNativeCameraResult(${JSONObject.quote(base64)});") {}
-                        return@registerForActivityResult
-                    }
+                // 关键：低端机型内存不足时 result.data 可能为 null。这正是我们用 EXTRA_OUTPUT
+                // 指定输出路径的原因——直接从我们指定的文件/URI 读取，不依赖返回的 data。
+                val base64 = when {
+                    file != null && file.exists() && file.length() > 0 -> readFileToBase64(file)
+                    uri != null -> readUriToBase64(uri)
+                    else -> null
                 }
-                // 兼容旧 CameraActivity 自绘相机回传（data/error 字段）
-                val intent = result.data
-                val data = intent?.getStringExtra("data")
-                val error = intent?.getStringExtra("error")
-                val js = when {
-                    data != null -> "window.__onNativeCameraResult(${JSONObject.quote(data)});"
-                    error != null -> "window.__onNativeCameraError(${JSONObject.quote(error)});"
-                    else -> "window.__onNativeCameraResult(null);"
+                if (base64 != null) {
+                    webView?.evaluateJavascript("window.__onNativeCameraResult(${JSONObject.quote(base64)});") {}
+                } else {
+                    Log.e(TAG, "camera result OK but read failed; file=$file uri=$uri")
+                    webView?.evaluateJavascript("window.__onNativeCameraError('read_failed');") {}
                 }
-                webView?.evaluateJavascript(js) {}
             } else {
-                // 用户取消或启动失败
-                pendingCameraUri = null
+                // 用户取消拍照
                 webView?.evaluateJavascript("window.__onNativeCameraResult(null);") {}
             }
         }
@@ -702,31 +714,86 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 上课打卡：App 内"拍照" → 直启系统相机（ACTION_IMAGE_CAPTURE，不申请本 App CAMERA 权限），
-     *  拍完经 cameraResultLauncher 读图片压缩为 base64 回传 WebView。规避 CameraX 闪退与 OEM 选择器打不开相机。 */
+    /**
+     * JS 拍照入口（H5 上课打卡"拍照"按钮 → JsBridge.openCamera → 此处）。
+     *
+     * 步骤 3【动态申请权限 · Android 6.0+/API23+】：
+     * 清单虽已声明 CAMERA，但 M 及以上必须在运行时申请，否则 ACTION_IMAGE_CAPTURE 直接抛
+     * SecurityException（这是"点拍照没反应"的真正根因）。已授予则直接启动，否则弹系统授权框。
+     */
     internal fun requestCameraAndLaunch() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            launchSystemCamera()
+        } else {
+            cameraPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+        }
+    }
+
+    /**
+     * 启动系统相机拍照（已确保持有 CAMERA 权限后调用）。逐项满足兼容性要求：
+     * 步骤 4【私有目录 · Android 10+/API29+ 分区存储】：照片存入应用专属外部目录
+     *   getExternalFilesDir(DIRECTORY_PICTURES)，无需任何存储权限，符合分区存储规范。
+     * 步骤 5【FileProvider · Android 7.0+/API24+】：严禁 file:// Uri（会抛
+     *   FileUriExposedException），改用 FileProvider 生成 content:// Uri，并通过
+     *   FLAG_GRANT_WRITE/READ_URI_PERMISSION 授予相机 App 对该 Uri 的读写权限。
+     * 健壮性：resolveActivity 预检系统是否有相机 App，避免 ActivityNotFoundException 崩溃；
+     *   用 EXTRA_OUTPUT 指定输出，规避低端机 onActivityResult 返回 data 为 null。
+     */
+    private fun launchSystemCamera() {
         try {
-            val uri = createImageOutputUri()
-            if (uri == null) {
-                webView?.evaluateJavascript("window.__onNativeCameraError('uri_create_failed');") {}
-                return
-            }
-            pendingCameraUri = uri
+            // 步骤 4：在应用私有外部目录创建照片文件（分区存储合规，免存储权限）
+            val picturesDir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "camera")
+            if (!picturesDir.exists()) picturesDir.mkdirs()
+            val photoFile = File(picturesDir, "IMG_${System.currentTimeMillis()}.jpg")
+
+            // 步骤 5：通过 FileProvider 取 content:// Uri（Android 7+ 必需，替代 file://）
+            val photoUri = FileProvider.getUriForFile(
+                this, "$packageName.fileprovider", photoFile
+            )
+            pendingCameraFile = photoFile
+            pendingCameraUri = photoUri
+
             val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-                putExtra(MediaStore.EXTRA_OUTPUT, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                putExtra(MediaStore.EXTRA_OUTPUT, photoUri)
+                // 授予相机 App 对该 content:// Uri 的读写权限（Android 7+ 必需）
+                addFlags(
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
             }
-            // 探测是否有相机 App 能处理；无则直接回传错误，避免 launch 后无反应
+
+            // 健壮性：先确认系统有相机 App 可处理，避免 launch 后无反应或崩溃
             if (captureIntent.resolveActivity(packageManager) == null) {
-                pendingCameraUri = null
+                cleanupPendingCamera()
+                showTopToast(this, "未找到可用的相机应用", Toast.LENGTH_SHORT)
                 webView?.evaluateJavascript("window.__onNativeCameraError('no_camera_app');") {}
                 return
             }
             cameraResultLauncher.launch(captureIntent)
         } catch (e: Exception) {
-            Log.e("MainActivity", "openCamera launch failed", e)
-            pendingCameraUri = null
-            webView?.evaluateJavascript("window.__onNativeCameraError(${JSONObject.quote("launch_failed:" + (e.message ?: "unknown"))});") {}
+            Log.e(TAG, "launchSystemCamera failed", e)
+            cleanupPendingCamera()
+            webView?.evaluateJavascript(
+                "window.__onNativeCameraError(${JSONObject.quote("launch_failed:" + (e.message ?: "unknown"))});"
+            ) {}
+        }
+    }
+
+    /** 清空挂起的相机输出引用 */
+    private fun cleanupPendingCamera() {
+        pendingCameraFile = null
+        pendingCameraUri = null
+    }
+
+    /** 读取拍照结果文件为压缩后的 base64 dataURL（拍照走 EXTRA_OUTPUT，优先直接读本地文件最可靠） */
+    private fun readFileToBase64(file: File): String? {
+        return try {
+            compressBytesToJpegDataUrl(file.readBytes())
+        } catch (e: Exception) {
+            Log.e(TAG, "readFileToBase64 failed", e)
+            null
         }
     }
 
@@ -1304,23 +1371,28 @@ class MainActivity : AppCompatActivity() {
     private fun readUriToBase64(uri: Uri): String? {
         return try {
             val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
-            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
-            var sample = 1
-            val maxDim = 1920
-            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
-                while (bounds.outWidth / sample > maxDim || bounds.outHeight / sample > maxDim) sample *= 2
-            }
-            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
-            val bmp = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, opts) ?: return null
-            val out = java.io.ByteArrayOutputStream()
-            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, out)
-            bmp.recycle()
-            "data:image/jpeg;base64," + android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
+            compressBytesToJpegDataUrl(raw)
         } catch (e: Exception) {
-            Log.e("MainActivity", "readUriToBase64 failed", e)
+            Log.e(TAG, "readUriToBase64 failed", e)
             null
         }
+    }
+
+    /** 将原始图片字节按最长边 1920px 采样压缩为 JPEG(75) 的 base64 dataURL（文件/URI 两路复用） */
+    private fun compressBytesToJpegDataUrl(raw: ByteArray): String? {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+        var sample = 1
+        val maxDim = 1920
+        if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+            while (bounds.outWidth / sample > maxDim || bounds.outHeight / sample > maxDim) sample *= 2
+        }
+        val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        val bmp = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, opts) ?: return null
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, out)
+        bmp.recycle()
+        return "data:image/jpeg;base64," + android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
     }
 
     inner class MyChromeClient(private val activity: MainActivity) : WebChromeClient() {
