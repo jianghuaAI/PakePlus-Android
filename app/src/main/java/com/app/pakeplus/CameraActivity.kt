@@ -43,8 +43,10 @@ class CameraActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
     /** CameraX 是否成功绑定（看门狗据此判断是否初始化超时） */
     private var bound = false
-    /** 初始化看门狗定时器（主线程） */
-    private var initWatchdog: Handler? = null
+    /** 主线程 Handler，用于初始化看门狗 */
+    private val watchdogHandler = Handler(Looper.getMainLooper())
+    /** 初始化看门狗任务 */
+    private var initWatchdog: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,7 +84,7 @@ class CameraActivity : AppCompatActivity() {
                     imageCapture
                 )
                 bound = true
-                initWatchdog?.removeCallbacksAndMessages(null)
+                watchdogHandler.removeCallbacksAndMessages(null)
             } catch (e: Exception) {
                 Log.e("CameraActivity", "startCamera failed", e)
                 failWithFallback("init_failed")
@@ -96,12 +98,14 @@ class CameraActivity : AppCompatActivity() {
      * H5 自动降级到文件选择器（ACTION_GET_CONTENT，安全不闪退）。
      */
     private fun startWatchdog(timeoutMs: Long = 5000) {
-        initWatchdog = Handler(Looper.getMainLooper()).postDelayed({
+        initWatchdog?.let { watchdogHandler.removeCallbacks(it) }
+        initWatchdog = Runnable {
             if (!bound) {
                 Log.e("CameraActivity", "camera init timeout, fallback to picker")
                 failWithFallback("timeout")
             }
-        }, timeoutMs)
+        }
+        initWatchdog?.let { watchdogHandler.postDelayed(it, timeoutMs) }
     }
 
     /** 相机不可用：携带 error 标记回传，触发 H5 降级选图器 */
@@ -210,7 +214,8 @@ class CameraActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        initWatchdog?.removeCallbacksAndMessages(null)
+        initWatchdog?.let { watchdogHandler.removeCallbacks(it) }
+        watchdogHandler.removeCallbacksAndMessages(null)
         cameraExecutor.shutdown()
     }
 }
