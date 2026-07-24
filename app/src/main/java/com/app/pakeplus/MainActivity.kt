@@ -211,15 +211,32 @@ class MainActivity : AppCompatActivity() {
         cameraResultLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
-            val intent = if (result.resultCode == RESULT_OK) result.data else null
-            val data = intent?.getStringExtra("data")
-            val error = intent?.getStringExtra("error")
-            val js = when {
-                data != null -> "window.__onNativeCameraResult(${JSONObject.quote(data)});"
-                error != null -> "window.__onNativeCameraError(${JSONObject.quote(error)});"
-                else -> "window.__onNativeCameraResult(null);" // 用户取消
+            if (result.resultCode == RESULT_OK) {
+                // 优先处理 ACTION_IMAGE_CAPTURE 回传：data 为 null，图片已写入 pendingCameraUri
+                val camUri = pendingCameraUri
+                if (camUri != null) {
+                    pendingCameraUri = null
+                    val base64 = readUriToBase64(camUri)
+                    if (base64 != null) {
+                        webView?.evaluateJavascript("window.__onNativeCameraResult(${JSONObject.quote(base64)});") {}
+                        return@registerForActivityResult
+                    }
+                }
+                // 兼容旧 CameraActivity 自绘相机回传（data/error 字段）
+                val intent = result.data
+                val data = intent?.getStringExtra("data")
+                val error = intent?.getStringExtra("error")
+                val js = when {
+                    data != null -> "window.__onNativeCameraResult(${JSONObject.quote(data)});"
+                    error != null -> "window.__onNativeCameraError(${JSONObject.quote(error)});"
+                    else -> "window.__onNativeCameraResult(null);"
+                }
+                webView?.evaluateJavascript(js) {}
+            } else {
+                // 用户取消或启动失败
+                pendingCameraUri = null
+                webView?.evaluateJavascript("window.__onNativeCameraResult(null);") {}
             }
-            webView?.evaluateJavascript(js) {}
         }
 
         // parseJsonWithNative
@@ -684,12 +701,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** 上课打卡：App 内"拍照" → 已授权则直接启动自绘相机，否则先申请 CAMERA 权限 */
+    /** 上课打卡：App 内"拍照" → 直启系统相机（ACTION_IMAGE_CAPTURE，不申请本 App CAMERA 权限），
+     *  拍完经 cameraResultLauncher 读图片压缩为 base64 回传 WebView。规避 CameraX 闪退与 OEM 选择器打不开相机。 */
     internal fun requestCameraAndLaunch() {
-        if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            cameraResultLauncher.launch(Intent(this, CameraActivity::class.java))
-        } else {
-            cameraPermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+        try {
+            val uri = createImageOutputUri()
+            if (uri == null) {
+                webView?.evaluateJavascript("window.__onNativeCameraError('uri_create_failed');") {}
+                return
+            }
+            pendingCameraUri = uri
+            val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            cameraResultLauncher.launch(captureIntent)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "openCamera launch failed", e)
+            webView?.evaluateJavascript("window.__onNativeCameraError('launch_failed');") {}
         }
     }
 
@@ -1246,6 +1275,29 @@ class MainActivity : AppCompatActivity() {
             FileProvider.getUriForFile(this, authority, file)
         } catch (e: Exception) {
             Log.e("MainActivity", "createImageOutputUri failed", e)
+            null
+        }
+    }
+
+    /** 读取拍照结果 URI（content:// 或 file://）为压缩后的 base64 dataURL，回传 WebView */
+    private fun readUriToBase64(uri: Uri): String? {
+        return try {
+            val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+            var sample = 1
+            val maxDim = 1920
+            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+                while (bounds.outWidth / sample > maxDim || bounds.outHeight / sample > maxDim) sample *= 2
+            }
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            val bmp = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, opts) ?: return null
+            val out = java.io.ByteArrayOutputStream()
+            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, out)
+            bmp.recycle()
+            "data:image/jpeg;base64," + android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "readUriToBase64 failed", e)
             null
         }
     }
