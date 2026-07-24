@@ -1375,22 +1375,26 @@ class MainActivity : AppCompatActivity() {
             try {
                 val acceptTypes = fileChooserParams?.acceptTypes
                 val isImage = acceptTypes?.any { it.startsWith("image/", ignoreCase = true) } == true
-                // <input capture> 由 WebView 标记为 capture 启用 → 直启系统相机，绕开
-                // ACTION_GET_CONTENT 内置"拍照"在 OEM 上拉不起相机的问题。
-                val wantCapture = fileChooserParams?.isCaptureEnabled() == true && isImage
+                // 可靠的 capture 信号：H5 拍照按钮在 accept 中带自定义 token（image/x-pp-camera），
+                // 规避部分 WebView / 定制 ROM（华为/小米/OPPO）上 isCaptureEnabled() 不可靠、
+                // 不识别 <input capture> 的问题（保留 isCaptureEnabled 作为兜底）。
+                val cameraToken = "image/x-pp-camera"
+                val wantCapture = isImage && (
+                    fileChooserParams?.isCaptureEnabled() == true ||
+                    acceptTypes?.any { it.equals(cameraToken, ignoreCase = true) } == true
+                )
+                // 兜底选择器用的 MIME（去掉内部 token，避免把标记泄露给系统选择器）
+                val cleanedTypes = acceptTypes?.filter { !it.equals(cameraToken, ignoreCase = true) }
+                    ?.takeIf { it.isNotEmpty() } ?: listOf("*/*")
 
                 // 标准 ACTION_GET_CONTENT 选择器（相册 / 文件场景，及相机失败兜底）
                 val getContentIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
-                    if (acceptTypes != null && acceptTypes.isNotEmpty()) {
-                        if (acceptTypes.size == 1) {
-                            type = acceptTypes[0]
-                        } else {
-                            type = "*/*"
-                            putExtra(Intent.EXTRA_MIME_TYPES, acceptTypes)
-                        }
+                    if (cleanedTypes.size == 1) {
+                        type = cleanedTypes[0]
                     } else {
                         type = "*/*"
+                        putExtra(Intent.EXTRA_MIME_TYPES, cleanedTypes.toTypedArray())
                     }
                     if (fileChooserParams?.mode == FileChooserParams.MODE_OPEN_MULTIPLE) {
                         putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
