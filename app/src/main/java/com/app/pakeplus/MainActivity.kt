@@ -67,6 +67,8 @@ import java.net.HttpURLConnection
 import android.annotation.TargetApi
 import android.util.Base64
 import java.io.File
+import android.content.ContentValues
+import android.os.Build
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import kotlin.math.abs
@@ -713,12 +715,19 @@ class MainActivity : AppCompatActivity() {
             pendingCameraUri = uri
             val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
                 putExtra(MediaStore.EXTRA_OUTPUT, uri)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            // 探测是否有相机 App 能处理；无则直接回传错误，避免 launch 后无反应
+            if (captureIntent.resolveActivity(packageManager) == null) {
+                pendingCameraUri = null
+                webView?.evaluateJavascript("window.__onNativeCameraError('no_camera_app');") {}
+                return
             }
             cameraResultLauncher.launch(captureIntent)
         } catch (e: Exception) {
             Log.e("MainActivity", "openCamera launch failed", e)
-            webView?.evaluateJavascript("window.__onNativeCameraError('launch_failed');") {}
+            pendingCameraUri = null
+            webView?.evaluateJavascript("window.__onNativeCameraError(${JSONObject.quote("launch_failed:" + (e.message ?: "unknown"))});") {}
         }
     }
 
@@ -1267,15 +1276,28 @@ class MainActivity : AppCompatActivity() {
 
     // 用 FileProvider 生成相机拍照输出 URI（规避 FileUriExposedException，Android 7+ 必需）
     private fun createImageOutputUri(): Uri? {
+        // 优先用 MediaStore content://（系统媒体库 URI，OEM 相机兼容性最好，规避自定义 FileProvider authority 被拒）
         return try {
-            val dir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "camera")
-            if (!dir.exists()) dir.mkdirs()
-            val file = File(dir, "pp_${System.currentTimeMillis()}.jpg")
-            val authority = "$packageName.fileprovider"
-            FileProvider.getUriForFile(this, authority, file)
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "pp_${System.currentTimeMillis()}.jpg")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/camera")
+                }
+            }
+            contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
         } catch (e: Exception) {
-            Log.e("MainActivity", "createImageOutputUri failed", e)
-            null
+            Log.e("MainActivity", "createImageOutputUri(MediaStore) failed", e)
+            // 兜底：自定义 FileProvider content://（低版本或 MediaStore 拒绝时）
+            try {
+                val dir = File(getExternalFilesDir(Environment.DIRECTORY_PICTURES), "camera")
+                if (!dir.exists()) dir.mkdirs()
+                val file = File(dir, "pp_${System.currentTimeMillis()}.jpg")
+                FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            } catch (e2: Exception) {
+                Log.e("MainActivity", "createImageOutputUri(FileProvider) failed", e2)
+                null
+            }
         }
     }
 
