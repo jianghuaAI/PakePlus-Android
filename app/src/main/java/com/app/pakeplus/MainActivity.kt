@@ -68,7 +68,6 @@ import android.annotation.TargetApi
 import android.util.Base64
 import java.io.File
 import android.content.ContentValues
-import android.os.Build
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import kotlin.math.abs
