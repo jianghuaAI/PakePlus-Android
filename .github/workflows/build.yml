@@ -67,6 +67,12 @@ jobs:
             - name: Build Debug APK
               run: ./gradlew assembleDebug --no-daemon
 
+            - name: Sync VERSION from gradle versionName
+              run: |
+                  VER=$(grep -oP 'versionName\s*=\s*"\K[0-9.]+' app/build.gradle.kts)
+                  echo "VERSION=$VER" >> "$GITHUB_ENV"
+                  echo "Synced VERSION=$VER"
+
             - name: Rename APK file
               run: |
                   cd app/build/outputs/apk/debug/
