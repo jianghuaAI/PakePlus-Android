@@ -1366,50 +1366,62 @@ class MainActivity : AppCompatActivity() {
                 activity.fileUploadCallback?.onReceiveValue(null)
             }
             activity.fileUploadCallback = filePathCallback
+            // 清理上次可能残留的相机 URI，避免串到本次相册选择
+            activity.pendingCameraUri = null
 
             // 加固（修复"点拍照即闪退"）：整个文件选择流程包在 try/catch(Exception) 内。
             // 任何壳侧异常（intent 构建、FileProvider、相机 App 启动失败等）都兜底为
             // "取消选择"，绝不让 WebView 进程崩溃。
             try {
                 val acceptTypes = fileChooserParams?.acceptTypes
+                val isImage = acceptTypes?.any { it.startsWith("image/", ignoreCase = true) } == true
+                // <input capture> 由 WebView 标记为 capture 启用 → 直启系统相机，绕开
+                // ACTION_GET_CONTENT 内置"拍照"在 OEM 上拉不起相机的问题。
+                val wantCapture = fileChooserParams?.isCaptureEnabled() == true && isImage
 
-                // 加固：不再为 <input capture> 直接发 ACTION_IMAGE_CAPTURE + FileProvider content:// URI。
-                // 部分 OEM 定制相机（华为 / 小米 / OPPO 等）对该 URI 兼容性差，相机 App 启动即崩溃
-                // 并带走调用方 WebView 进程 → 表现为"点拍照即闪退"。
-                // 改为统一走 ACTION_GET_CONTENT 标准选择器（多数设备内置"相机"入口），兼容最稳，
-                // 与系统浏览器行为一致。
-                val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                // 标准 ACTION_GET_CONTENT 选择器（相册 / 文件场景，及相机失败兜底）
+                val getContentIntent = Intent(Intent.ACTION_GET_CONTENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE)
-
-                    // 根据参数设置文件类型
                     if (acceptTypes != null && acceptTypes.isNotEmpty()) {
-                        // 支持多种 MIME 类型
                         if (acceptTypes.size == 1) {
                             type = acceptTypes[0]
                         } else {
-                            // 多个类型时使用通配符，并设置额外类型
                             type = "*/*"
                             putExtra(Intent.EXTRA_MIME_TYPES, acceptTypes)
                         }
                     } else {
-                        // 默认支持所有文件类型
                         type = "*/*"
                     }
-
-                    // 支持多选（前端 <input multiple>）
                     if (fileChooserParams?.mode == FileChooserParams.MODE_OPEN_MULTIPLE) {
                         putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                     }
                 }
+                val chooserTitle = if (isImage) "拍照或选择图片" else "选择文件"
+                val chooserIntent = Intent.createChooser(getContentIntent, chooserTitle)
 
-                // 图片场景标题提示"拍照或选择图片"，其余为"选择文件"
-                val chooserTitle = if (acceptTypes?.any { it.startsWith("image/", ignoreCase = true) } == true) {
-                    "拍照或选择图片"
+                if (wantCapture) {
+                    // 直启系统相机（标准 ACTION_IMAGE_CAPTURE + FileProvider URI 输出）。
+                    // 比 CameraX 自绘稳、比系统选择器内置拍照可控，且本 App 不申请 CAMERA 权限。
+                    try {
+                        val uri = createImageOutputUri()
+                        if (uri == null) {
+                            activity.fileChooserLauncher.launch(chooserIntent)
+                        } else {
+                            activity.pendingCameraUri = uri
+                            val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                                putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                            }
+                            activity.fileChooserLauncher.launch(captureIntent)
+                        }
+                    } catch (ce: Exception) {
+                        Log.e("WebChromeClient", "启动系统相机失败，降级选择器", ce)
+                        activity.pendingCameraUri = null
+                        activity.fileChooserLauncher.launch(chooserIntent)
+                    }
                 } else {
-                    "选择文件"
+                    activity.fileChooserLauncher.launch(chooserIntent)
                 }
-                val chooserIntent = Intent.createChooser(intent, chooserTitle)
-                activity.fileChooserLauncher.launch(chooserIntent)
                 return true
             } catch (e: Exception) {
                 Log.e("WebChromeClient", "打开文件选择器失败", e)
