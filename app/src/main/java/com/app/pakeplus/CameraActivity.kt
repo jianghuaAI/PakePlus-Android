@@ -7,6 +7,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.util.Base64
 import android.util.Log
 import android.view.View
@@ -39,14 +41,22 @@ class CameraActivity : AppCompatActivity() {
     private var imageCapture: ImageCapture? = null
     private var capturedBitmap: Bitmap? = null
     private lateinit var cameraExecutor: ExecutorService
+    /** CameraX 是否成功绑定（看门狗据此判断是否初始化超时） */
+    private var bound = false
+    /** 初始化看门狗定时器（主线程） */
+    private var initWatchdog: Handler? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityCameraBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // 规避部分厂商 ROM / 低版本 Android 上 PreviewView 默认 SurfaceView(BufferQueue)
+        // 渲染崩溃：强制使用 TextureView 兼容模式（CameraX 头号闪退根因）。
+        binding.previewView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         startCamera()
+        startWatchdog()
         binding.btnCancel.setOnClickListener { finishWith(null) }
         binding.btnShutter.setOnClickListener { takePhoto() }
         binding.btnRetake.setOnClickListener { retake() }
@@ -71,12 +81,35 @@ class CameraActivity : AppCompatActivity() {
                     preview,
                     imageCapture
                 )
+                bound = true
+                initWatchdog?.removeCallbacksAndMessages(null)
             } catch (e: Exception) {
                 Log.e("CameraActivity", "startCamera failed", e)
-                Toast.makeText(this, "相机初始化失败", Toast.LENGTH_SHORT).show()
-                finishWith(null)
+                failWithFallback("init_failed")
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    /**
+     * 看门狗：CameraX 绑定超过阈值仍未成功（部分低端机 HAL 卡死 / 无回调），
+     * 避免黑屏假死。携带 error 标记回传，由 MainActivity 注入 window.__onNativeCameraError，
+     * H5 自动降级到文件选择器（ACTION_GET_CONTENT，安全不闪退）。
+     */
+    private fun startWatchdog(timeoutMs: Long = 5000) {
+        initWatchdog = Handler(Looper.getMainLooper()).postDelayed({
+            if (!bound) {
+                Log.e("CameraActivity", "camera init timeout, fallback to picker")
+                failWithFallback("timeout")
+            }
+        }, timeoutMs)
+    }
+
+    /** 相机不可用：携带 error 标记回传，触发 H5 降级选图器 */
+    private fun failWithFallback(reason: String) {
+        val intent = Intent()
+        intent.putExtra("error", reason)
+        setResult(RESULT_OK, intent)
+        finish()
     }
 
     private fun takePhoto() {
@@ -92,7 +125,7 @@ class CameraActivity : AppCompatActivity() {
             object : ImageCapture.OnImageSavedCallback {
                 override fun onError(exc: ImageCaptureException) {
                     Log.e("CameraActivity", "takePhoto failed", exc)
-                    Toast.makeText(this@CameraActivity, "拍照失败", Toast.LENGTH_SHORT).show()
+                    failWithFallback("capture_failed")
                 }
 
                 override fun onImageSaved(result: ImageCapture.OutputFileResults) {
@@ -107,8 +140,7 @@ class CameraActivity : AppCompatActivity() {
                         showResultControls(true)
                     } catch (e: Exception) {
                         Log.e("CameraActivity", "decode failed", e)
-                        Toast.makeText(this@CameraActivity, "照片处理失败", Toast.LENGTH_SHORT).show()
-                        finishWith(null)
+                        failWithFallback("decode_failed")
                     }
                 }
             }
@@ -125,7 +157,7 @@ class CameraActivity : AppCompatActivity() {
 
     private fun confirm() {
         val bmp = capturedBitmap ?: return finishWith(null)
-        val scaled = scaleToMaxSide(bmp, 1280)
+        val scaled = scaleToMaxSide(bmp, 1024)
         val out = ByteArrayOutputStream()
         scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
         val b64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
@@ -178,6 +210,7 @@ class CameraActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        initWatchdog?.removeCallbacksAndMessages(null)
         cameraExecutor.shutdown()
     }
 }

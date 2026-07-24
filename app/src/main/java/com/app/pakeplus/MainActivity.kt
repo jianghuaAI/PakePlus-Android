@@ -205,19 +205,21 @@ class MainActivity : AppCompatActivity() {
             if (granted) {
                 cameraResultLauncher.launch(Intent(this, CameraActivity::class.java))
             } else {
-                webView.evaluateJavascript("window.__onNativeCameraResult(null);") {}
+                webView?.evaluateJavascript("window.__onNativeCameraResult(null);") {}
             }
         }
         cameraResultLauncher = registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
-            val data = if (result.resultCode == RESULT_OK) result.data?.getStringExtra("data") else null
-            val js = if (data != null) {
-                "window.__onNativeCameraResult(${JSONObject.quote(data)});"
-            } else {
-                "window.__onNativeCameraResult(null);"
+            val intent = if (result.resultCode == RESULT_OK) result.data else null
+            val data = intent?.getStringExtra("data")
+            val error = intent?.getStringExtra("error")
+            val js = when {
+                data != null -> "window.__onNativeCameraResult(${JSONObject.quote(data)});"
+                error != null -> "window.__onNativeCameraError(${JSONObject.quote(error)});"
+                else -> "window.__onNativeCameraResult(null);" // 用户取消
             }
-            webView.evaluateJavascript(js) {}
+            webView?.evaluateJavascript(js) {}
         }
 
         // parseJsonWithNative
@@ -806,7 +808,7 @@ class MainActivity : AppCompatActivity() {
         """.trimIndent()
         webView.post {
             if (::webView.isInitialized) {
-                webView.evaluateJavascript(script, null)
+                webView?.evaluateJavascript(script, null)
             }
         }
     }

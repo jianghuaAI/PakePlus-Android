@@ -17,11 +17,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.oaikes.pakeplus.android"
+        applicationId = "com.ciai.hospitalerp"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.0.2"
+        versionCode = 2
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -33,7 +33,8 @@ android {
             // 关闭资源压缩：R8 会把 res/xml/provider_paths.xml 误判为无引用而删除，
             // 导致拍照时 FileProvider.getUriForFile 抛 IllegalArgumentException 闪退。
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("release")
+            // debug 不强制 release 签名：无 keystore 时也能 assembleDebug 出可装包（CI 默认路径）
+            // release 仍用 release signingConfig，由 CI 通过 KEYSTORE_BASE64 secret 注入 pakeplus.keystore
         }
         release {
             isMinifyEnabled = true
