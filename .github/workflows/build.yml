@@ -4,7 +4,7 @@ on:
     workflow_dispatch:
     push:
         branches:
-            - 'ciaihospital-erp'
+            - 'ciaihospital-erp-hospital'
 
 permissions:
     contents: write

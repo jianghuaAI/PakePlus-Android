@@ -1,7 +1,7 @@
 {
-  "name": "ciaihospital-erp",
-  "url": "https://erp.jlcakf.com/?biz=rehab",
-  "showName": "儿童康复中心",
+  "name": "ciaihospital-erp-hospital",
+  "url": "https://erp.jlcakf.com/?biz=hospital",
+  "showName": "慈爱康复医院",
   "appid": "",
   "icon": "",
   "iconPath": "",
@@ -11,7 +11,7 @@
   "injectJq": true,
   "tauriApi": false,
   "devbug": false,
-  "version": "1.1.3",
+  "version": "1.1.4",
   "preview": "desktop",
   "platform": [
     "1-1",
@@ -161,10 +161,10 @@
     }
   },
   "ios": {
-    "name": "PakePlus",
-    "showName": "PakePlus",
-    "version": "0.0.1",
-    "webUrl": "https://juejin.cn/",
+    "name": "ciaihospital-erp-hospital",
+    "showName": "慈爱康复医院",
+    "version": "1.1.4",
+    "webUrl": "https://erp.jlcakf.com/?biz=hospital",
     "id": "com.xiaoshen.pakeplus.ios",
     "icon": "./app-icon.png",
     "desc": "Package for personal use only, please do not use for commercial purposes（打包仅限个人使用，请勿传播或商业用途）",
@@ -174,11 +174,11 @@
     "safeArea": "all"
   },
   "android": {
-    "name": "ciaihospital-erp",
-    "showName": "儿童康复中心",
+    "name": "ciaihospital-erp-hospital",
+    "showName": "慈爱康复医院",
     "version": "1.1.4",
-    "webUrl": "https://erp.jlcakf.com/?biz=rehab",
-    "id": "com.ciai.hospitalerp",
+    "webUrl": "https://erp.jlcakf.com/?biz=hospital",
+    "id": "com.ciai.hospitalerp.hospital",
     "icon": "./app-icon.png",
     "input": "./app-icon.png",
     "output": "./res",
