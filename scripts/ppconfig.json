@@ -10,8 +10,8 @@
   "single": true,
   "injectJq": true,
   "tauriApi": false,
-  "devbug": false,
-  "version": "1.1.6",
+    "devbug": false,
+    "version": "1.1.7",
   "preview": "desktop",
   "platform": [
     "1-1",
@@ -163,7 +163,7 @@
   "ios": {
     "name": "ciaihospital-erp-hospital",
     "showName": "慈爱康复医院",
-    "version": "1.1.6",
+    "version": "1.1.7",
     "webUrl": "https://erp.jlcakf.com/?biz=hospital",
     "id": "com.xiaoshen.pakeplus.ios",
     "icon": "./app-icon.png",
@@ -176,7 +176,7 @@
   "android": {
     "name": "ciaihospital-erp-hospital",
     "showName": "慈爱康复医院",
-    "version": "1.1.6",
+    "version": "1.1.7",
     "webUrl": "https://erp.jlcakf.com/?biz=hospital",
     "id": "com.ciai.hospitalerp.hospital",
     "icon": "./app-icon.png",
