@@ -11,7 +11,7 @@
   "injectJq": true,
   "tauriApi": false,
   "devbug": false,
-  "version": "1.1.3",
+  "version": "1.1.5",
   "preview": "desktop",
   "platform": [
     "1-1",
@@ -81,7 +81,7 @@
     }
   },
   "phone": {
-    "fullScreen": true,
+    "fullScreen": false,
     "launchImage": "launch.jpg",
     "screenOn": false,
     "download": true,
@@ -163,7 +163,7 @@
   "ios": {
     "name": "PakePlus",
     "showName": "PakePlus",
-    "version": "0.0.1",
+    "version": "1.1.5",
     "webUrl": "https://juejin.cn/",
     "id": "com.xiaoshen.pakeplus.ios",
     "icon": "./app-icon.png",
@@ -176,7 +176,7 @@
   "android": {
     "name": "ciaihospital-erp",
     "showName": "儿童康复中心",
-    "version": "1.1.4",
+    "version": "1.1.5",
     "webUrl": "https://erp.jlcakf.com/?biz=rehab",
     "id": "com.ciai.hospitalerp",
     "icon": "./app-icon.png",
@@ -189,7 +189,7 @@
     "pubBody": "慈爱康复医院 ERP 系统 Android 客户端",
     "isHtml": false,
     "debug": false,
-    "safeArea": "fullscreen"
+    "safeArea": "normal"
   },
   "desktop": {
     "name": "PakePlus2",
