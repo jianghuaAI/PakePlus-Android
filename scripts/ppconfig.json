@@ -11,7 +11,7 @@
   "injectJq": true,
   "tauriApi": false,
   "devbug": false,
-  "version": "1.1.5",
+  "version": "1.1.6",
   "preview": "desktop",
   "platform": [
     "1-1",
@@ -81,7 +81,7 @@
     }
   },
   "phone": {
-    "fullScreen": true,
+    "fullScreen": false,
     "launchImage": "launch.jpg",
     "screenOn": false,
     "download": true,
@@ -163,7 +163,7 @@
   "ios": {
     "name": "ciaihospital-erp-hospital",
     "showName": "慈爱康复医院",
-    "version": "1.1.5",
+    "version": "1.1.6",
     "webUrl": "https://erp.jlcakf.com/?biz=hospital",
     "id": "com.xiaoshen.pakeplus.ios",
     "icon": "./app-icon.png",
@@ -176,7 +176,7 @@
   "android": {
     "name": "ciaihospital-erp-hospital",
     "showName": "慈爱康复医院",
-    "version": "1.1.5",
+    "version": "1.1.6",
     "webUrl": "https://erp.jlcakf.com/?biz=hospital",
     "id": "com.ciai.hospitalerp.hospital",
     "icon": "./app-icon.png",
@@ -189,7 +189,7 @@
     "pubBody": "慈爱康复医院 ERP 系统 Android 客户端",
     "isHtml": false,
     "debug": false,
-    "safeArea": "fullscreen"
+    "safeArea": "normal"
   },
   "desktop": {
     "name": "PakePlus2",
